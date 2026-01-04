@@ -10,42 +10,49 @@
 // byte_we     (output) - we're only writing a byte's worth of data
 // byte_load   (output) - we're doing a byte load
 // lui         (output) - the instruction is a lui
-// slt         (output) - the instruction is an slt
+// slt         (output) - the instruction is an slt 
+// branch      (output) - the instruction is a branch
 // opcode       (input) - the opcode field from the instruction
 // funct        (input) - the function field from the instruction
-// zero         (input) - from the ALU
-//
 
-`define CONTROL_NEXT    2'd0    // Add 4 to the program counter
-`define CONTROL_BRANCH  2'd1    // Offset address by inst[15:0]*4 + 4
-`define CONTROL_JUMP    2'd2    // Jump to {PC[31:28],inst[25:0],00}
-`define CONTROL_JUMPR   2'd3    // Jump to address loaded from rs_data
+// `define CONTROL_NEXT    2'd0    // Add 4 to the program counter
+// `define CONTROL_BRANCH  2'd1    // Offset address by inst[15:0]*4 + 4
+// `define CONTROL_JUMP    2'd2    // Jump to {PC[31:28],inst[25:0],00}
+// `define CONTROL_JUMPR   2'd3    // Jump to address loaded from rs_data 
+
+`define CONTROL_NEXT    1'd0    // Add 4 to the program counter
+`define CONTROL_JUMP    1'd1    // Jump to {PC[31:28],inst[25:0],00}
+`define BRANCH_NOP      3'd0    // Do not branch.
+`define BRANCH_EQ       3'd1    // Branch if equal
+`define BRANCH_NEQ      3'd2    // Branch if not equal
+`define BRANCH_LTZ      3'd3    // Branch if less than zero
+`define BRANCH_GTZ      3'd4    // Branch if greater than zero
 
 module mips_decode(alu_op, write_enable, itype, except, control_type,
 		   mem_read, word_we, byte_we, byte_load, lui, slt, 
-		   opcode, funct, zero, shift, shift_v, shift_op, load_ra, link);
+		   opcode, funct, shift, shift_v, shift_op, load_ra, link,
+         branch_control, jr, alu_b_zero);
 	output reg [2:0] alu_op;
    output reg [1:0] shift_op;
 	output reg write_enable, itype, except;
-	output reg [1:0] control_type;
+	output reg control_type;
 	output reg mem_read, word_we, byte_we, byte_load, lui, slt;
    output reg shift, shift_v;
    output reg load_ra, link;
+   output reg [2:0] branch_control;
+   output reg jr, alu_b_zero;
 	input [5:0] opcode, funct;
-	input zero;
-
-	// Concat MIPs instruction (Not in use yet. Will determine if decoding method changes)
-	// wire [12:0] instruction;
-	// assign instruction = {zero,opcode,zero};
 
 	always @(*) begin 
 		// Set up default values 
 		alu_op = `ALU_ADD;            // By default, ALU is set to add for easier debugging.
+      alu_b_zero = 1'b0;            // When 1, sets ALU_B to 32'd0.
 		write_enable = 1'b0;          // When 1, writes rdest with rd_data.
 		itype = 1'bx;                 // If 0, uses rd as write address and rtData as ALU B. If 1, uses
                                     // ... rt as write address and immediate as ALU B.
 		except = 1'b0;                // Should always be zero unless decode failure
 		control_type = `CONTROL_NEXT; // By default, go to next instruction
+      branch_control = `BRANCH_NOP; // By default, do not branch.
 		mem_read = 1'b0;              // When 1, loads memory from current alu_out
 		word_we = 1'b0;               // When 1, writes a word of rtData into alu_out
 		byte_we = 1'b0;               // When 1, writes a byte of rtData into alu_out
@@ -57,10 +64,10 @@ module mips_decode(alu_op, write_enable, itype, except, control_type,
       shift_op = 2'd0;              // By default, shifter will shift left for easy debugging.
       load_ra = 1'b0;               // When 1, forces rd_num to 31 (return address register)
       link = 1'b0;                  // When 1, sets writeback line to PC + 8.
+      jr = 1'b0;                    // When 1, jumps to ALU_A
 
-		// Decode MIPS instruction - TODO (Decide between nested case and concat) (ALSO DO ALL THE INSTRUCTIONS!) 
-		// K-Map would require 2^12 or 2^13 (4096 or 8192 cells :D)
-		case (opcode) // instruction = {zero,opcode,funct} or {opcode,funct} if we get rid of nested case (probably not bad, mux to a mux and they're cheap)
+		// Decode MIPS instruction
+		case (opcode) 
 			/* R Type Instruction: opcode is always zero */
 			6'h00: begin
 				itype = 1'b0;  // Set itype to 0 as these are r type
@@ -120,14 +127,14 @@ module mips_decode(alu_op, write_enable, itype, except, control_type,
 					// JR Instruction: PC = R[rs]
                // Jump Register
 					`OP0_JR: begin
-						control_type = `CONTROL_JUMPR;
+						jr = 1'b1; // Enable jump register
 					end
 
                // JALR Instruction: 
                // Jump and Link Register
                `OP0_JALR: begin
-                  control_type = `CONTROL_JUMPR;
-                  link = 1'b1;
+                  jr = 1'b1; // Enable jump register
+                  link = 1'b1; // Turn on link
                   write_enable = 1'b1;
                end
 					
@@ -210,31 +217,36 @@ module mips_decode(alu_op, write_enable, itype, except, control_type,
             write_enable = 1'b1;
             link = 1'b1;
             load_ra = 1'b1;
-				// Work on R[31] = PC + 8. How are we implementing this in hardware?
 			end
 
          // branch on equal: if(R[rs]==R[rt]) PC=PC+4+immediate*4
          `OP_BEQ: begin
-            control_type = zero ? `CONTROL_BRANCH : `CONTROL_NEXT;
+            //control_type = zero ? `CONTROL_BRANCH : `CONTROL_NEXT; 
+            branch_control = `BRANCH_EQ;
             itype = 0;
             alu_op = `ALU_SUB;
          end
 
          // branch not equal: if(R[rs]!=R[rt]) PC=PC+4+immediate*4
          `OP_BNE: begin
-            control_type = zero ? `CONTROL_NEXT : `CONTROL_BRANCH;
+            //control_type = zero ? `CONTROL_NEXT : `CONTROL_BRANCH; 
+            branch_control = `BRANCH_NEQ;
             itype = 0;
             alu_op = `ALU_SUB;
          end
 
-         // branch less than zero: if(R[rs]<0) PC=PC+4+immediate*4
+         // branch less than equal to zero: if(R[rs]<=0) PC=PC+4+immediate*4
          `OP_BLEZ: begin
-            except = 1; // TODO: add hardware to support this instruction
+            branch_control = `BRANCH_LTZ;
+            itype = 0;
+            alu_op = `ALU_SUB;
          end
 
          // branch greater than zero: if (R[rs]>0) PC=PC+4+immediate*4
          `OP_BGTZ: begin
-            except = 1; // TODO: add hardware to support this instruction
+            branch_control = `BRANCH_GTZ;
+            itype = 0;
+            alu_op = `ALU_SUB;
          end
 			
 			/* I Type Instruction: opcode is anything else */

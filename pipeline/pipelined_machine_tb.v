@@ -1,7 +1,15 @@
 `include "mips_defines.v"
 `include "rom.v"
 `include "modules.v"
+`include "shifter.v"
+`include "mips_decode.v"
+`include "forward_unit.v"
+`include "hazard_unit.v"
+`include "branch_mod.v"
+`include "sign_extender.v"
+`include "shift_left_2.v"
 `include "mux_lib.v"
+`include "pipeline_registers.auto.v"
 `include "pipelined_machine.v"
 
 module test;
@@ -24,7 +32,7 @@ module test;
    
   initial
      $monitor("At time %t, reset = %d pc = %h, inst = %h",
-              $time, reset, pm.PC, pm.inst);
+              $time, reset, pm.PC, pm.inst_IF);
 
    // periodically check for the end of simulation.  When it happens
    // dump the register file contents.

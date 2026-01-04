@@ -6,6 +6,10 @@
 // enable (input)  - Load new value? (yes = 1, no = 0)
 // reset  (input)  - Synchronous reset    (reset = 1)
 //
+
+`define ALU_NOR    3'h6
+`define ALU_XOR    3'h7
+
 module register(q, d, clk, enable, reset);
 
    parameter

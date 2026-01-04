@@ -1,0 +1,13 @@
+// Import for pipeline register '{{ name }}'.
+// Wire assumptions:
+// Any wire that crosses the register will use format name_STAGE i.e. data_out_MEM
+// (For best results, generate wires with generate_pipelines.py)
+// Clock signal is clk
+// Reset signal is reset
+// Enable wire is {{ name }}_reg_enable
+{{ name }}_reg {{in_stage}}_{{out_stage}}(
+    .clk(clk), .reset(reset), .enable({{name}}_reg_enable), .flush({{name}}_reg_flush),
+{% for signal in signals -%}
+{{"    "}}.{{signal[0]}}_IN({{signal[0]}}_{{in_stage}}), .{{signal[0]}}_OUT({{signal[0]}}_{{out_stage}}){% if not loop.last %},{% endif %}
+{% endfor -%}
+);

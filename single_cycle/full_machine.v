@@ -23,16 +23,16 @@
 
 module mips_decode(alu_op, write_enable, itype, except, control_type,
 		   mem_read, word_we, byte_we, byte_load, lui, slt, 
-		   opcode, funct, zero, shift, shift_v, shift_op, load_ra, link);
+		   opcode, funct, zero, shift, shift_v, shift_op, load_ra, link, negative, alu_b_zero);
 	output reg [2:0] alu_op;
    output reg [1:0] shift_op;
 	output reg write_enable, itype, except;
 	output reg [1:0] control_type;
-	output reg mem_read, word_we, byte_we, byte_load, lui, slt;
+	output reg mem_read, word_we, byte_we, byte_load, lui, slt, alu_b_zero;
    output reg shift, shift_v;
    output reg load_ra, link;
 	input [5:0] opcode, funct;
-	input zero;
+	input zero, negative;
 
 	// Concat MIPs instruction (Not in use yet. Will determine if decoding method changes)
 	// wire [12:0] instruction;
@@ -57,6 +57,7 @@ module mips_decode(alu_op, write_enable, itype, except, control_type,
       shift_op = 2'd0;              // By default, shifter will shift left for easy debugging.
       load_ra = 1'b0;               // When 1, forces rd_num to 31 (return address register)
       link = 1'b0;                  // When 1, sets writeback line to PC + 8.
+      alu_b_zero = 1'b0;            // When 1, sets ALU B input to 0.
 
 		// Decode MIPS instruction - TODO (Decide between nested case and concat) (ALSO DO ALL THE INSTRUCTIONS!) 
 		// K-Map would require 2^12 or 2^13 (4096 or 8192 cells :D)
@@ -229,12 +230,18 @@ module mips_decode(alu_op, write_enable, itype, except, control_type,
 
          // branch less than zero: if(R[rs]<0) PC=PC+4+immediate*4
          `OP_BLEZ: begin
-            except = 1; // TODO: add hardware to support this instruction
+            control_type = negative ? `CONTROL_BRANCH : `CONTROL_NEXT;
+            itype = 0;
+            alu_b_zero = 1'b1;
+            alu_op = `ALU_SUB;
          end
 
          // branch greater than zero: if (R[rs]>0) PC=PC+4+immediate*4
          `OP_BGTZ: begin
-            except = 1; // TODO: add hardware to support this instruction
+            control_type = (negative || zero) ? `CONTROL_NEXT : `CONTROL_BRANCH;
+            itype = 0;
+            alu_b_zero = 1'b1;
+            alu_op = `ALU_SUB;
          end
 			
 			/* I Type Instruction: opcode is anything else */
@@ -391,6 +398,7 @@ module full_machine(except, clk, reset);
    wire load_ra;
    wire link;
    wire except;
+   wire alu_b_zero;
 
    // register file signals
    wire [31:0] rs_data;
@@ -427,6 +435,7 @@ module full_machine(except, clk, reset);
    wire [4:0] itype_out;
    wire [31:0] lui_out;
    wire [31:0] link_alu_out;
+   wire [31:0] itype_out_b;
 
    // Decoder
    mips_decode decoder(
@@ -444,11 +453,13 @@ module full_machine(except, clk, reset);
       .opcode(inst[31:26]),
       .funct(inst[5:0]),
       .zero(zero),
+      .negative(negative),
       .shift(shift),
       .shift_v(shift_v),
       .shift_op(shift_op),
       .load_ra(load_ra),
-      .link(link)
+      .link(link),
+      .alu_b_zero(alu_b_zero)
    );
 
    // Program Counter
@@ -507,7 +518,7 @@ module full_machine(except, clk, reset);
    );
 
    mux2v mux_itypeB(
-      .out(ALU_B),
+      .out(itype_out_b),
       .A(rt_data),
       .B(imm32),
       .sel(itype)
@@ -585,6 +596,13 @@ module full_machine(except, clk, reset);
       .A(lui_out),
       .B(link_alu_out),
       .sel(link)
+   );
+
+   mux2v mux_alu_b(
+      .out(ALU_B),
+      .A(itype_out_b),
+      .B(32'd0),
+      .sel(alu_b_zero)
    );
 
    // ALUS

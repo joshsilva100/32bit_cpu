@@ -1,6 +1,6 @@
 pipelined_machine: pm.vcd
 
-pipelined_machine_exe: mips_defines.v modules.v rom.v pipelined_machine.v mips_decode.v shifter.v sign_extender.v shift_left_2.v pipeline_registers.v forward_unit.v hazard_unit.v pipelined_machine_tb.v  
+pipelined_machine_exe: mips_defines.v modules.v rom.v pipelined_machine.v mips_decode.v shifter.v sign_extender.v shift_left_2.v pipeline_registers.auto.v forward_unit.v hazard_unit.v branch_mod.v pipelined_machine_tb.v  
 	iverilog -o pipelined_machine_exe -Wall pipelined_machine_tb.v
 
 pm.vcd: pipelined_machine_exe memory.text.dat memory.data.dat
@@ -32,6 +32,11 @@ pipeline_test:
 	ln -s pipeline_test.text.dat memory.text.dat
 	ln -s pipeline_test.data.dat memory.data.dat
 	
+memory.text.dat:
+	cp pipeline_test.text.dat memory.text.dat
 
+memory.data.dat:
+	cp pipeline_test.data.dat memory.data.dat
 
-
+clean:
+	rm pipelined_machine_exe
